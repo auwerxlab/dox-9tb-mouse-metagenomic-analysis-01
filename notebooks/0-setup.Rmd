@@ -1,0 +1,49 @@
+---
+title: "Setup"
+author: "Alexis Rapin"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+```{r knitr, echo=F}
+knitr::opts_chunk$set(echo=T, message=F, warning=F)
+```
+
+In this notebook, general project variables and parameters are set.
+
+## Set project environment and variables
+
+```{r setup, eval=T}
+# Load required packages
+suppressMessages(library(here))
+suppressMessages(library(ggplot2))
+
+# Set figures dimensions
+fig.layout <- list(width.single = 89,
+                  width.double = 183,
+                  height.max = 247,
+                  font.family = "sans",
+                  font.size = 12)
+
+theme <- theme_bw(base_size = fig.layout$font.size,
+                  base_family = fig.layout$font.family)
+
+# Set color palletes
+annotation.colors = list(InfectionStatus = c("control" = "#9c9ca0",
+                                       "infected" = "#ffffff"),
+                         TreatmentLabel = c("veh" = "#ffffff",
+                                            "Dox 40mpkd" = "#ed1f24",
+                                            "9TB 1mpkd" = "#3db83d"))
+
+save(fig.layout,
+     theme,
+     annotation.colors,
+     file = here("data/setup.RData"))
+```
+
+#### Environment
+
+```{r, session_infos, eval=T}
+sessionInfo()
+```

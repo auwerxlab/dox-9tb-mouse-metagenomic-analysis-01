@@ -1,0 +1,1 @@
+Comparison of bacterial species diversity in terms of Shannon diversity index (SDI) and richness. Statistical significance assessed by Kruskal-Wallis test and post-hoc Wilcoxon test. '****': p < 0.0001, '***': p < 0.001, '**': p < 0.01, '*': p < 0.05, 'ns': p > 0.05.

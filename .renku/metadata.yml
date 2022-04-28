@@ -1,0 +1,30 @@
+'@id': https://sv-renku.epfl.ch/projects/alexis.rapin/dox-9tb-mouse-metagenomic-analysis-01
+'@type':
+- http://schema.org/Project
+- http://www.w3.org/ns/prov#Location
+http://schema.org/agent: 0.16.2
+http://schema.org/creator:
+  '@id': mailto:alexis.rapin@epfl.ch
+  '@type':
+  - http://schema.org/Person
+  - http://www.w3.org/ns/prov#Person
+  http://schema.org/affiliation: null
+  http://schema.org/alternateName: null
+  http://schema.org/email: alexis.rapin@epfl.ch
+  http://schema.org/name: Alexis Rapin
+  http://www.w3.org/2000/01/rdf-schema#label: Alexis Rapin
+http://schema.org/dateCreated: '2022-03-21T15:47:08.038097+00:00'
+http://schema.org/name: dox-9tb-mouse-metagenomic-analysis-01
+http://schema.org/schemaVersion: '8'
+https://swissdatasciencecenter.github.io/renku-ontology#automatedTemplateUpdate: false
+https://swissdatasciencecenter.github.io/renku-ontology#immutableTemplateFiles: []
+https://swissdatasciencecenter.github.io/renku-ontology#templateId: R-renv
+https://swissdatasciencecenter.github.io/renku-ontology#templateMetadata: '{"__template_source__":
+  "https://github.com/auwerxlab/renku-project-template", "__template_ref__": "deb856b",
+  "__template_id__": "R-renv", "__namespace__": "arapin", "__automated_update__":
+  true, "__repository__": "https://sv-renku-git.epfl.ch", "__sanitized_project_name__":
+  "dox-9tb-mouse-metagenomic-analysis-01", "__project_slug__": "arapin/dox-9tb-mouse-metagenomic-analysis-01",
+  "__renku_version__": "0.16.2", "Rversion": "", "description": "", "name": "dox-9tb-mouse-metagenomic-analysis-01"}'
+https://swissdatasciencecenter.github.io/renku-ontology#templateReference: deb856b
+https://swissdatasciencecenter.github.io/renku-ontology#templateSource: https://github.com/auwerxlab/renku-project-template
+https://swissdatasciencecenter.github.io/renku-ontology#templateVersion: deb856befe91f1ecf0546c8de9fcdece3e76a8e0

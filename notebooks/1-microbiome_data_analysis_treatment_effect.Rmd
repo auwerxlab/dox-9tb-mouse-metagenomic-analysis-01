@@ -1,0 +1,428 @@
+---
+title: "Microbiome data analysis - treatment effect"
+author: "Alexis Rapin"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    df_print: paged
+---
+```{r knitr, echo=F}
+knitr::opts_chunk$set(echo=T, message=F, warning=F)
+```
+
+In this notebook, the effect of Dox and 9-TB on the gut microbiome is assessed using data from fecal whole metagenome sequencing.
+
+The analysis focuses on the bacterial community using counts of species derived using the Braken software.
+
+The analysis is done separately at the following 3 time points:
+- Day -4: 4 days prior IFV infection and 1 day prior Dox/9-TB treatment.
+- Day 0: The day of IFV infection (samples were collected prior to the infection) and 3 days after the start of the Dox/9-TB treatment.
+- Day 3: 3 days post IFV infection and 6 days after the start of the Dox/9-TB treatment.
+
+Differences in bacterial species composition are assessed using perMANOVA and visualized using NMDS.
+
+Differences in bacterial species diversity are assessed using the Shannon diversity index (SDI) and richness.
+
+## Set environment and variables
+
+```{r setup, eval=T}
+# Load required packages
+suppressMessages(library(here))
+suppressMessages(library(tidyverse))
+suppressMessages(library(readxl))
+suppressMessages(library(plotly))
+suppressMessages(library(ggpubr))
+# R package vegan needed yet not loaded
+
+load(here("data/setup.RData"))
+set.seed(1988)
+```
+
+## Load taxa counts data and samples metadata into R objects
+
+```{r ETL, eval=F}
+taxa.count.table <- list.files(here("data/metagenome"), pattern = "\\.report_table\\.xlsx") %>%
+  lapply(function(x){
+    readxl::read_xlsx(here("data/metagenome", x)) %>%
+      mutate(SampleID = str_remove(case, "^[A-Z0-9]*-"),
+             across(where(is.character), as.factor))
+  }) %>%
+  bind_rows %>%
+  # Resolve identical taxa names using an arbitrary index
+  group_by(SampleID, name) %>%
+  mutate(taxa = paste0(name, "|", 1:n())) %>%
+  ungroup
+saveRDS(taxa.count.table, here("data/metagenome/taxa_count_table.rds"))
+
+samples.metadata <- read.table(here("data/metagenome/IFV_EPFL_20210817_run_samples.txt"),
+                               sep = "\t",
+                               header = 1,
+                               stringsAsFactors = T) %>%
+  mutate(SampleID = as.character(SampleID),
+         TimePoint = as.factor(paste0("Day ", SamplingTimeRelativeToInfection)),
+         Cage = paste0(TreatmentID,
+                       " - ", InfectionStatus,
+                       " - cage", CageID) %>%
+           as.factor,
+         TreatmentLabel = factor(TreatmentLabel,
+                                 levels = c("veh",
+                                            "Dox 40mpkd",
+                                            "9TB 1mpkd"))) %>%
+  as.data.frame %>%
+  `row.names<-`(.$SampleID)
+saveRDS(samples.metadata, here("data/metagenome/samples_metadata.rds"))
+
+# Split taxa count data into separate matrices for each time point
+taxa.count.matrix.per.timepoint.list <- lapply(as.character(levels(samples.metadata$TimePoint)), function(x){
+  d <- samples.metadata %>%
+    filter(TimePoint == x) %>%
+    as.data.frame %>%
+    `row.names<-`(.$SampleID)
+  
+  taxa.count.table %>%
+    filter(domain == "Bacteria") %>%
+    inner_join(d,
+               by = "SampleID") %>%
+    select(SampleID, taxa, rpm) %>%
+    pivot_wider(id_cols = SampleID, names_from = taxa, values_from = rpm) %>%
+    mutate(across(where(is.numeric), ~ifelse(is.na(.x), 0, .x))) %>%
+    as.data.frame %>%
+    `row.names<-`(.$SampleID) %>%
+    select(-SampleID) %>%
+    as.matrix
+}) %>%
+  `names<-`(levels(samples.metadata$TimePoint))
+saveRDS(taxa.count.matrix.per.timepoint.list,
+        here("data/metagenome/taxa_count_matrix_per_timepoint_list.rds"))
+```
+
+## Summarise domains representation
+
+```{r, eval=F, echo=F}
+taxa.count.table <- readRDS(here("data/metagenome/taxa_count_table.rds"))
+samples.metadata <- readRDS(here("data/metagenome/samples_metadata.rds"))
+```
+```{r domain_representation_overview, eval=F}
+t <- taxa.count.table %>%
+  group_by(SampleID, domain) %>%
+  summarise(domain.total.rpm = sum(rpm)) %>%
+  ungroup %>%
+  group_by(SampleID) %>%
+  mutate(domain.total.rpm.rel = domain.total.rpm*100/sum(domain.total.rpm)) %>%
+  ungroup %>%
+  group_by(domain) %>%
+  summarise(mean = mean(domain.total.rpm.rel),
+            sd = sd(domain.total.rpm.rel),
+            min = min(domain.total.rpm.rel),
+            max = max(domain.total.rpm.rel)) %>%
+  ungroup %>%
+  arrange(-mean) %>%
+  mutate(across(where(is.numeric), ~round(.x, digits = 3))) %>%
+  mutate(across(where(is.numeric), ~ifelse(.x > 0.001, paste0(.x, "%"), "<0.001%")))
+
+t.name <- "domain_abundance_summary_table"
+t.legend <- "Summary of domains relative representation per sample in whole metagenome sequencing reads."
+writeLines(t.legend, here("figs/metagenome_analysis", paste0(t.name, "_legend.txt")))
+write.csv(t, here("figs/metagenome_analysis", paste0(t.name, ".csv")), row.names = F)
+saveRDS(t, here("data/metagenome_analysis", paste0(t.name, ".rds")))
+```
+```{r, eval=T, echo=F}
+t.name <- "domain_abundance_summary_table"
+t <- readRDS(here("data/metagenome_analysis", paste0(t.name, ".rds")))
+t.legend <- readLines(here("figs/metagenome_analysis", paste0(t.name, "_legend.txt")))
+```
+```{r, eval=T}
+t
+```
+
+`r t.legend`
+
+## Compare bacterial community composition using perMANOVA
+
+Compare treatments groups across time points (i.e. before treatment, before IFV infection, after IFV infection).
+
+```{r, eval=F, echo=F}
+taxa.count.matrix.per.timepoint.list <- readRDS(here("data/metagenome/taxa_count_matrix_per_timepoint_list.rds"))
+samples.metadata <- readRDS(here("data/metagenome/samples_metadata.rds"))
+```
+```{r perMANOVA, eval=F}
+n.permutations <- 10000
+variable <- c("TreatmentLabel")
+
+t.list <- lapply(variable, function(x){
+
+  t1 <- lapply(names(taxa.count.matrix.per.timepoint.list), function(y){
+
+  m <- taxa.count.matrix.per.timepoint.list[[y]] %>%
+    {.[row.names(.) %in% samples.metadata$SampleID, ]} %>%
+    {.[, colSums(.) > 0]}
+  data <- samples.metadata[row.names(m), ]
+  
+  vegan::adonis(as.formula(paste0("m ~ ", x)),
+                            data = data, permutations = n.permutations,
+                    method = "bray")$aov.tab %>%
+  as.data.frame %>%
+  mutate(Term = row.names(.),
+         sign.sym. = symnum(`Pr(>F)`, corr = FALSE, na = FALSE,
+                            cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1),
+                            symbols = c("****", "***", "**", "*", "ns")),
+         TimePoint = y,
+         Comparison = paste(paste0( "'", unique(data[[x]]), "'"),
+                            collapse = " vs ")) %>%
+  select(Term, TimePoint, Comparison, Df, SumsOfSqs, MeanSqs,
+         F.Model, R2, p = `Pr(>F)`, sign.sym.)
+}) %>%
+  bind_rows
+
+t2 <- lapply(names(taxa.count.matrix.per.timepoint.list), function(y){
+
+  m <- taxa.count.matrix.per.timepoint.list[[y]] %>%
+    {.[row.names(.) %in% samples.metadata$SampleID, ]}
+  data <- samples.metadata[row.names(m), ]
+
+  combn(as.character(unique(data[[x]])), m = 2, simplify = F) %>%
+  lapply(function(z){
+    
+    d1 <- data %>%
+      filter(.[[x]] %in% z)
+    m1 <- m[as.character(d1$SampleID), ] %>%
+      {.[, colSums(.) > 0]}
+    
+    vegan::adonis(as.formula(paste0("m1 ~ ", x)), data = d1,
+                  permutations = n.permutations,
+                  method = "bray")$aov.tab %>%
+  as.data.frame %>%
+      mutate(Term = row.names(.),
+             Comparison = paste(paste0( "'", z, "'"),
+                            collapse = " vs "))
+  }) %>%
+  bind_rows %>%
+  mutate(p.adj = p.adjust(.$`Pr(>F)`, method="BH"),
+         sign.sym. = symnum(p.adj, corr = FALSE, na = FALSE,
+                            cutpoints = c(0, 0.001, 0.01, 0.05, 0.1, 1),
+                            symbols = c("****", "***", "**", "*", "ns")),
+         TimePoint = y) %>%
+  select(Term, TimePoint, Comparison, Df, SumsOfSqs, MeanSqs,
+         F.Model, R2, p = `Pr(>F)`, p.adj, sign.sym.)
+}) %>%
+  bind_rows
+
+  list(aov.tab = t1,
+       aov.tab.posthoc = t2)
+  
+}) %>%
+  `names<-`(variable)
+
+
+t <- bind_rows(t.list$TreatmentLabel$aov.tab,
+                t.list$TreatmentLabel$aov.tab.posthoc) %>%
+  filter(!Term %in% c("Residuals", "Total")) %>%
+  select(TimePoint, Comparison, R2, p, p.adj, sign.sym.) %>%
+  mutate(across(where(is.numeric), ~ifelse(.x < 0.0001,
+                                           "<0.0001",
+                                           as.character(round(.x, digits = 4)))),
+         across(everything(), ~ifelse(is.na(.x), "NA", .x)))
+
+t.name <- "adonis_out"
+t.legend <- paste0("Comparison of bacterial community composition by permutational multivariate analysis of variance (perMANOVA) based on the Bray-Curtis dissimilarity with ", n.permutations, " permutations. P-values adjusted for multiple comparisons using the Benjamini and Hochberg method. '****': p < 0.0001/ p.adj < 0.001, '***': p < 0.001/p.adj < 0.01, '**': p < 0.01/p.adj < 0.05, '*': p < 0.05/p.adj < 0.1, 'ns': p > 0.05/p.adj > 0.1.")
+writeLines(t.legend, here("figs/metagenome_analysis", paste0(t.name, "_legend.txt")))
+saveRDS(t.list, here("data/metagenome_analysis", paste0(t.name, "_list.rds")))
+saveRDS(t, here("data/metagenome_analysis", paste0(t.name, ".rds")))
+
+lapply(names(t.list), function(x){
+  lapply(names(t.list[[x]]), function(y){
+    write.csv(y, here("figs/metagenome_analysis", paste0(t.name,
+                                                         "_", x,
+                                                         "_", y,
+                                                         ".csv")), row.names = F)
+  })
+})
+write.csv(t, here("figs/metagenome_analysis", paste0(t.name, ".csv")), row.names = F)
+```
+```{r, eval=T, echo=F}
+t.name <- "adonis_out"
+t <- readRDS(here("data/metagenome_analysis", paste0(t.name, ".rds")))
+t.legend <- readLines(here("figs/metagenome_analysis", paste0(t.name, "_legend.txt")))
+```
+```{r, eval=T}
+t
+```
+
+`r t.legend`
+
+
+## Visualize bacterial communities distances using NMDS
+
+```{r, eval=F, echo=F}
+samples.metadata <- readRDS(here("data/metagenome/samples_metadata.rds"))
+taxa.count.matrix.per.timepoint.list <- readRDS(here("data/metagenome/taxa_count_matrix_per_timepoint_list.rds"))
+```
+```{r NMDS, eval=F}
+
+nmds.out <- lapply(names(taxa.count.matrix.per.timepoint.list), function(x){
+  taxa.count.matrix.per.timepoint.list[[x]] %>%
+    {.[row.names(.) %in% samples.metadata$SampleID, ]} %>%
+    {.[, colSums(.) > 0]} %>%
+  vegan::metaMDS(k = 2,
+                 distance = "bray")
+}) %>%
+  `names<-`(names(taxa.count.matrix.per.timepoint.list))
+saveRDS(nmds.out, here("data/metagenome_analysis/nmds_out.rds"))
+```
+```{r, eval=T, echo=F}
+nmds.out <- readRDS(here("data/metagenome_analysis/nmds_out.rds"))
+```
+```{r, eval=T}
+# Check if converged
+lapply(nmds.out, function(x){x$converged})
+```
+```{r, eval=F, echo=F}
+nmds.out <- readRDS(here("data/metagenome_analysis/nmds_out.rds"))
+samples.metadata <- readRDS(here("data/metagenome/samples_metadata.rds"))
+```
+```{r, eval=F}
+
+p <- lapply(names(nmds.out), function(x){
+  nmds.out[[x]]$points %>%
+  as.data.frame %>%
+  mutate(SampleID = row.names(.))
+  }) %>%
+  bind_rows %>%
+  left_join(samples.metadata,
+            by = "SampleID") %>%
+  mutate(Treatment = TreatmentLabel) %>%
+  {
+    hull <- group_by(., TimePoint, Treatment) %>%
+      slice(chull(MDS1, MDS2))
+    
+  ggplot(., aes(x = MDS1, y = MDS2)) +
+  theme +
+  facet_grid(~TimePoint) +
+  geom_hline(yintercept = 0) +
+  geom_vline(xintercept = 0) +
+  geom_polygon(data = hull,
+                 aes(fill = Treatment),
+               alpha = 0.5,
+               lwd = 0.5,
+               color = "black") +
+  geom_point(aes(fill = Treatment),
+             pch = 21, size = 3, alpha = 0.8) +
+  scale_fill_manual(values = annotation.colors$TreatmentLabel) +
+  coord_cartesian(clip = "off")
+  }
+
+p.name <- "nmds"
+p.legend <- "Comparison of bacterial community composition by non-metric multidimensional scaling (NMDS) based on the Bray-Curtis dissimilarity."
+writeLines(p.legend, here("figs/metagenome_analysis", paste0(p.name, "_legend.txt")))
+saveRDS(p, here("figs/metagenome_analysis", paste0(p.name, ".rds")))
+ggsave(here("figs/metagenome_analysis", paste0(p.name, ".pdf")),
+       p,
+       device = "pdf",
+       width = fig.layout$width.double,
+       height = 0.5*fig.layout$width.single,
+       units = "mm")
+
+```
+```{r, eval=T, echo=F}
+p.name <- "nmds"
+p <- readRDS(here("figs/metagenome_analysis", paste0(p.name, ".rds")))
+p.legend <- readLines(here("figs/metagenome_analysis", paste0(p.name, "_legend.txt")))
+```
+```{r, eval=T}
+ggplotly(p)
+```
+
+`r p.legend`
+
+## Compare bacterial diversity
+
+```{r diversity, eval=F, echo=F}
+samples.metadata <- readRDS(here("data/metagenome/samples_metadata.rds"))
+taxa.count.matrix.per.timepoint.list <- readRDS(here("data/metagenome/taxa_count_matrix_per_timepoint_list.rds"))
+```
+```{r, eval=F}
+
+diversity <- lapply(names(taxa.count.matrix.per.timepoint.list), function(x){
+  taxa.count.matrix.per.timepoint.list[[x]] %>%
+    {.[row.names(.) %in% samples.metadata$SampleID, ]} %>%
+    {.[, colSums(.) != 0]} %>%
+    {
+      data.frame(SampleID = row.names(.),
+              SDI = vegan::diversity(.),
+              Richness = rowSums(. != 0))
+      } %>%
+  pivot_longer(cols = c("SDI", "Richness"), names_to = "var", values_to = "value") %>%
+  mutate(var = factor(var, levels = c("SDI", "Richness")))
+}) %>%
+  bind_rows
+saveRDS(diversity, here("data/metagenome_analysis/diversity.rds"))
+```
+
+```{r, eval=F, echo=F}
+diversity <- readRDS(here("data/metagenome_analysis/diversity.rds"))
+samples.metadata <- readRDS(here("data/metagenome/samples_metadata.rds"))
+```
+```{r, eval=F}
+p <- diversity %>%
+  left_join(samples.metadata,
+            by = "SampleID") %>%
+    mutate(Treatment = TreatmentLabel) %>%
+    {
+    ggplot(., aes(x = Treatment, y = value,
+                  group = Treatment,
+                  CageID = CageID)) +
+    theme +
+        facet_grid(var~TimePoint, scales = "free_y") +
+    geom_boxplot(aes(fill = Treatment),
+                 outlier.shape = NA) +
+    geom_jitter(aes(SampleID = SampleID,
+                  AnimalID = AnimalID),
+                size = 0.5,
+                width = 0.1) +
+        stat_compare_means(label = "p.format",
+                           label.x.npc = "left",
+                           label.y.npc = "bottom") +
+    stat_compare_means(comparisons = combn(levels(.$Treatment), 2, simplify = F),
+                       label = "p.signif",
+                       method = "wilcox") +
+        # Hack some space for stats
+        geom_point(data = . %>%
+                     group_by(var, Treatment, CageID) %>%
+                     summarise(value = c(1.1*max(value), 0.95*min(value))),
+                   x = NA) +
+    scale_fill_manual(values = annotation.colors$TreatmentLabel) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+        coord_cartesian(expand = T, clip = "off")
+    }
+
+p.name <- "diversity"
+p.legend <- "Comparison of bacterial species diversity in terms of Shannon diversity index (SDI) and richness. Statistical significance assessed by Kruskal-Wallis test and post-hoc Wilcoxon test. '****': p < 0.0001, '***': p < 0.001, '**': p < 0.01, '*': p < 0.05, 'ns': p > 0.05."
+writeLines(p.legend, here("figs/metagenome_analysis", paste0(p.name, "_legend.txt")))
+saveRDS(p, here("figs/metagenome_analysis", paste0(p.name, ".rds")))
+ggsave(here("figs/metagenome_analysis", paste0(p.name, ".pdf")),
+       p,
+       device = "pdf",
+       width = fig.layout$width.single,
+       height = fig.layout$width.single,
+       units = "mm")
+
+```
+```{r, eval=T, echo=F}
+p.name <- "diversity"
+p <- readRDS(here("figs/metagenome_analysis", paste0(p.name, ".rds")))
+p.legend <- readLines(here("figs/metagenome_analysis", paste0(p.name, "_legend.txt")))
+```
+```{r, eval=T}
+p
+```
+
+`r p.legend`
+
+#### Environment
+
+```{r, session_infos, eval=T}
+sessionInfo()
+```

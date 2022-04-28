@@ -1,0 +1,109 @@
+---
+title: "Figures compilation"
+author: "Alexis Rapin"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    df_print: paged
+---
+```{r knitr, echo=F}
+knitr::opts_chunk$set(echo=T, message=F, warning=F)
+```
+
+In this notebook, figures panels and tables are assembled.
+
+## Set environment and variables
+
+```{r setup, eval=T}
+# Load required packages
+suppressMessages(library(here))
+suppressMessages(library(tidyverse))
+suppressMessages(library(ggpubr))
+
+load(here("data/setup.RData"))
+set.seed(1988)
+```
+
+## Table 1
+
+```{r Table_1, eval=F}
+t.name <- "domain_abundance_summary_table"
+t <- readRDS(here("data/metagenome_analysis", paste0(t.name, ".rds")))
+t.legend <- readLines(here("figs/metagenome_analysis", paste0(t.name, "_legend.txt")))
+
+table.name <- "Table_1"
+
+writeLines(t.legend, here("figs/compiled_figures", paste0(table.name, "_legend.txt")))
+saveRDS(t, here("figs/compiled_figures", paste0(table.name, ".rds")))
+write.csv(t, here("figs/compiled_figures", paste0(table.name, ".csv")),
+          row.names = F)
+```
+
+## Table 2
+
+```{r Table_2, eval=F}
+t <- readRDS(here("data/metagenome_analysis/adonis_out.rds"))
+
+t.legend <- readLines(here("figs/metagenome_analysis/adonis_out_legend.txt"))
+
+table.name <- "Table_2"
+
+writeLines(t.legend, here("figs/compiled_figures", paste0(table.name, "_legend.txt")))
+saveRDS(t, here("figs/compiled_figures", paste0(table.name, ".rds")))
+write.csv(t, here("figs/compiled_figures", paste0(table.name, ".csv")),
+          row.names = F)
+```
+
+## Figure 1
+
+```{r Figure_1, eval=F}
+p1 <- readRDS(here("figs/metagenome_analysis/nmds.rds")) +
+  theme(panel.background = element_blank(),
+    plot.background = element_blank(),
+    strip.background = element_blank(),
+    legend.background = element_blank(),
+    legend.box.background = element_blank(),
+    legend.key = element_blank())
+p1.legend <- readLines(here("figs/metagenome_analysis/nmds_legend.txt"))
+
+p2 <- readRDS(here("figs/metagenome_analysis/diversity.rds")) +
+  theme(panel.background = element_blank(),
+    plot.background = element_blank(),
+    strip.background = element_blank(),
+    legend.background = element_blank(),
+    legend.box.background = element_blank(),
+    legend.key = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    strip.text.y = element_blank()) +
+  labs(y = "Richness        SDI")
+p2.legend <- readLines(here("figs/metagenome_analysis/diversity_legend.txt"))
+
+fig <- ggarrange(p1, p2,
+                 ncol = 1,
+                 heights = c(0.5, 1),
+                 labels = c("A", "B"))
+
+fig.name <- "Figure_1"
+fig.legend <- paste("(A)", p1.legend,
+                    "(B)", p2.legend)
+
+writeLines(fig.legend, here("figs/compiled_figures", paste0(fig.name, "_legend.txt")))
+saveRDS(fig, here("figs/compiled_figures", paste0(fig.name, ".rds")))
+for(f in c("png", "svg", "pdf")) {
+  ggsave(here("figs/compiled_figures", paste0(fig.name, ".", f)),
+       fig,
+       device = f,
+       bg = "transparent",
+       width = 0.8*fig.layout$width.double,
+       height = 0.8*fig.layout$width.double,
+       units = "mm")
+}
+```
+
+#### Environment
+
+```{r, session_infos, eval=T}
+sessionInfo()
+```
