@@ -14,6 +14,8 @@ This project is based on the following template: https://github.com/auwerxlab/re
 
 This R project assesses the impact of two tetracycline (Tet) compounds, Doxycycline (Dox) and 9-TB, on the fecal microbial communities of 8 week-old female BALB/cN mice in a longitudinal manner both before and after infection with Influenza A virus (IFV).
 
+Results were included in: Mottis A, Yang Li T, El Alam G, Rapin A, Katsyuba E, Liaskos D, D’Amico D, Harris NL, Grier MC, Mouchiroud L, Nelson ML, Auwerx J. Tetracycline-induced mitohormesis mediates disease tolerance against influenza. 2022. Accepted for publication in the Journal of Clinical Investigation.
+
 ## Background and results
 
 Mitohormesis defines the increase in fitness mediated by adaptive responses to a mild mitochondrial stress. Tetracyclines inhibit not only bacterial but also mitochondrial translation, thus imposing a low level of mitochondrial stress to eukaryotic cells. The mitochondrial stress response induced by Dox and 9-TB improved survival and disease tolerance against lethal IFV infection.
@@ -68,7 +70,7 @@ You can also get an **archive** of this project from https://github.com.
 $ git clone https://github.com/auwerxlab/dox-9tb-mouse-metagenomic-analysis-01.git
 ```
 
-And from Zenodo: 
+And from Zenodo: [![DOI](https://www.zenodo.org/badge/486551594.svg)](https://www.zenodo.org/badge/latestdoi/486551594)
 
 ## Requirements
 
